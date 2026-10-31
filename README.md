@@ -4,11 +4,11 @@
 
 ## Online demo
 
-Try Hivemind without installing anything: **[Open the live demo](https://YOUR-RENDER-SERVICE.onrender.com)**. The first request may take a little while while Render wakes the free service. Sandbox rooms are private to each browser and expire after 10 minutes without activity.
+Try Hivemind without installing anything: **[Open the live demo](https://hivemind-qefg.onrender.com)**. The first request may take a little while while Render wakes the free service. Sandbox rooms are private to each browser and expire after 10 minutes without activity.
 
 ## Deploy on Render Free
 
-1. Create a Twitch application in the [Twitch Developer Console](https://dev.twitch.tv/console/apps), select **Confidential**, and add `https://YOUR-RENDER-SERVICE.onrender.com/auth/callback` as its OAuth redirect URL.
+1. Create a Twitch application in the [Twitch Developer Console](https://dev.twitch.tv/console/apps), select **Confidential**, and add `https://hivemind-qefg.onrender.com/auth/callback` as its OAuth redirect URL.
 2. Create a Render Blueprint from this repository and apply `render.yaml`.
 3. In the Render service environment, set `PUBLIC_BASE_URL`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, and `OPENAI_API_KEY`. The model defaults can be adjusted there. Keep secrets private.
 4. In Twitch, ensure the authorized channel account can grant the requested scopes. Open the service URL and choose **Log in with Twitch**.
