@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: hivemind
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: TWITCH_CLIENT_ID
+        sync: false
+      - key: TWITCH_CLIENT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_EMBED_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_MODERATION_MODEL
+        value: omni-moderation-latest
+      - key: OPENAI_TTS_MODEL
+        value: gpt-4o-mini-tts
+      - key: OPENAI_TTS_VOICE
+        value: alloy
+      - key: CLUSTER_THRESHOLD
+        value: "0.6"
+      - key: WINDOW_SECONDS
+        value: "20"
