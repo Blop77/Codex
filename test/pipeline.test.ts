@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { clusterByCosine, dedupeMessages, type ChatMessage } from '../src/pipeline.ts';
+import { clusterByCosine, dedupeMessages, mergeIntentGroups, type ChatMessage } from '../src/pipeline.ts';
 
 const messages: ChatMessage[] = [
   { userId: '1', username: 'one', text: 'go left', timestamp: 0 },
@@ -28,4 +28,39 @@ test('greedy cosine clustering assigns nearest matching messages and computes sh
 
 test('clustering rejects mismatched message and embedding counts', () => {
   assert.throws(() => clusterByCosine(messages, [[1, 0]], 0.7), /counts must match/);
+});
+
+test('intent merging combines shares, carries merged examples, sorts by share, and omits leftovers', () => {
+  const clusterShares = [0.2, 0.18, 0.16, 0.22, 0.12, 0.1];
+  const examples = ['Go left', 'Left door', 'Trust the left path', 'Heal first', 'Explore the statue', 'Unrelated noise'];
+  const clusters = clusterShares.map((share, index) => ({
+    share,
+    members: [{ ...messages[index % messages.length], text: examples[index] }]
+  }));
+
+  const merged = mergeIntentGroups(clusters, [
+    { clusterIndexes: [0, 1, 2], label: 'Go left' },
+    { clusterIndexes: [3], label: 'Heal first' },
+    { clusterIndexes: [4], label: 'Explore the statue' }
+  ]);
+
+  assert.deepEqual(merged.map(({ label }) => label), ['Go left', 'Heal first', 'Explore the statue']);
+  assert.deepEqual(merged.map(({ share }) => Math.round(share * 100)), [54, 22, 12]);
+  assert.deepEqual(merged[0].examples, ['Go left', 'Left door', 'Trust the left path']);
+  assert.equal(merged.some((group) => group.examples.includes('Unrelated noise')), false);
+});
+
+test('intent merging assigns a raw cluster only once and returns at most three groups', () => {
+  const clusters = [0.4, 0.3, 0.2, 0.1].map((share, index) => ({
+    share,
+    members: [{ ...messages[index % messages.length], text: `example ${index}` }]
+  }));
+  const merged = mergeIntentGroups(clusters, [
+    { clusterIndexes: [0, 0], label: 'First' },
+    { clusterIndexes: [0, 1], label: 'Second' },
+    { clusterIndexes: [2], label: 'Third' },
+    { clusterIndexes: [3], label: 'Fourth' }
+  ]);
+  assert.deepEqual(merged.map((group) => group.label), ['First', 'Second', 'Third']);
+  assert.deepEqual(merged.map((group) => group.share), [0.4, 0.3, 0.2]);
 });

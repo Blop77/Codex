@@ -26,7 +26,7 @@ const scenarios: Record<string, Scenario> = {
     { name: 'left path', opinions: [
       { weight: 66, texts: ['Go left, LEFT!', 'Left hallway has the objective', 'Turn left at the big statue', 'LEFT DOOR trust'] },
       { weight: 22, texts: ['No no its straight ahead', 'Keep going forward', 'The marker is up the middle'] },
-      { weight: 12, texts: ['We should check the map', 'Hold on where is the objective', 'Wait for the quest ping'] }
+      { weight: 12, texts: ['Pause and check the map before moving', 'Open the map and find the objective marker', 'Stop here and check the route on the map', 'Map check first, then choose a direction'] }
     ] },
     { name: 'turn back', opinions: [
       { weight: 61, texts: ['We passed it, turn around!', 'Backtrack backtrack', 'Wrong way, go back to the fork'] },

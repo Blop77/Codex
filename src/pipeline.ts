@@ -12,6 +12,46 @@ export type MessageCluster = {
   share: number;
 };
 
+export type IntentGroup = { clusterIndexes: number[]; label: string };
+export type ConsensusCluster = { label: string; share: number; examples: string[] };
+
+export function mergeIntentGroups(
+  clusters: readonly Pick<MessageCluster, 'members' | 'share'>[],
+  intentGroups: readonly IntentGroup[],
+  maxGroups = 3,
+  maxExamples = 4
+): ConsensusCluster[] {
+  const assigned = new Set<number>();
+  return intentGroups.slice(0, maxGroups).map((group) => {
+    const indexes = [...new Set(group.clusterIndexes)].filter((index) =>
+      Number.isInteger(index) && index >= 0 && index < clusters.length && !assigned.has(index)
+    );
+    indexes.forEach((index) => assigned.add(index));
+
+    const merged = indexes.map((index) => clusters[index]);
+    const seenExamples = new Set<string>();
+    const examples: string[] = [];
+    for (const cluster of merged) {
+      for (const message of cluster.members) {
+        const example = message.text.trim();
+        const key = normalizeMessage(example);
+        if (!key || seenExamples.has(key)) continue;
+        seenExamples.add(key);
+        examples.push(example);
+        if (examples.length >= maxExamples) break;
+      }
+      if (examples.length >= maxExamples) break;
+    }
+
+    return {
+      label: group.label.trim(),
+      share: merged.reduce((sum, cluster) => sum + cluster.share, 0),
+      examples
+    };
+  }).filter((group) => group.examples.length > 0 && group.label.length > 0)
+    .sort((left, right) => right.share - left.share);
+}
+
 export function normalizeMessage(text: string): string {
   return text.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 }
