@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --require ./sim/tsx-bootstrap.cjs ./node_modules/tsx/dist/cli.mjs watch src/server.ts",
     "sim": "node --require ./sim/tsx-bootstrap.cjs ./node_modules/tsx/dist/cli.mjs sim/index.ts",
+    "video": "node video/generate.mjs",
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test"
   },
@@ -22,6 +23,9 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.4",
     "@types/ws": "^8.5.14",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "playwright": "^1.64.1",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
   }

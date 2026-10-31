@@ -50,3 +50,17 @@ npm test       # unit tests
 ```
 
 See [SPEC.md](SPEC.md) for room routes and the WebSocket message contract.
+
+## Making the demo video
+
+Set `OPENAI_API_KEY` and `OPENAI_TTS_MODEL` in `.env`. By default the recorder visits `https://hivemind-qefg.onrender.com`; override it with `VIDEO_BASE_URL` if the demo is hosted elsewhere. Optionally set `VIDEO_VOICE` (defaults to `onyx`) and `VIDEO_REPO_URL`.
+
+Install the project dependencies and Playwright's bundled Chromium browser (no system ffmpeg or global browser install is used):
+
+```sh
+npm ci
+npx playwright install chromium
+npm run video
+```
+
+The script caches per-scene OpenAI narration in `video/build/vo/`, records the live site with headed Playwright, creates title/diagram/outro cards, writes YouTube captions, and renders `video/out/hivemind-demo.mp4` under 2:58. Add human recordings to `video/clips/twitch.mp4` and `video/clips/codex.mp4` before the final submission build; optional `hook.mp4` replaces the opening Twitch excerpt. Missing clips are visibly marked with placeholder cards. Generated media in `video/build/`, `video/out/`, and `video/clips/` is gitignored.

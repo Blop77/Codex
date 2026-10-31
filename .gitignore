@@ -3,3 +3,6 @@ dist/
 .env
 tokens.json
 npm-debug.log*
+video/build/
+video/out/
+video/clips/
