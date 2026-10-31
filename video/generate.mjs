@@ -25,14 +25,19 @@ const subtitlePath = path.join(outDir, 'hivemind-demo.srt');
 const baseUrl = (process.env.VIDEO_BASE_URL || 'https://hivemind-qefg.onrender.com').replace(/\/$/, '');
 const repoUrl = process.env.VIDEO_REPO_URL || 'https://github.com/Blop77/Codex';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// 4K output. Pages render at 1920x1080 CSS pixels with a 2x device scale, so text stays sharp.
+const OUT_W = 3840, OUT_H = 2160, VIEW_W = 1920, VIEW_H = 1080, SCALE = OUT_W / VIEW_W;
+// Narration must match what the deployed site does (render.yaml). These read the same env vars.
+const windowSeconds = Math.max(5, Number(process.env.WINDOW_SECONDS) || 20);
+const chatModelLabel = (process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini').replace(/^gpt/i, 'GPT').replace(/-mini$/i, ' mini');
 const ffmpeg = ffmpegStatic;
 const ffprobe = ffprobeStatic.path;
 
 const scenes = [
   { id: 'hook', title: 'Hook', text: 'When a Twitch chat moves this fast, nobody gets heard. Not the viewers. Not even the streamer.', min: 12, footage: [] },
   { id: 'title', title: 'Title', text: 'This is Hivemind. A thousand voices, one mind.', min: 8, footage: [] },
-  { id: 'live', title: 'Live on Twitch', text: 'Hivemind reads every chat message live through Twitch EventSub. Every fifteen seconds it finds what chat actually agrees on, and speaks it out loud, as one character, right on stream. The meter shows the top opinions. The face shows the mood of the room: hyped, salty, confused, or chaotic.', min: 28, footage: [] },
-  { id: 'how', title: 'How it works', text: 'Under the hood, every message passes OpenAI moderation first, so trolls can\'t hijack the voice. Embeddings group messages by meaning, so “left”, “take the left door” and “go left at the statue” count as one opinion. GPT-4.1 merges those groups into intents, picks the mood, and writes the line.', min: 22, footage: [] },
+  { id: 'live', title: 'Live on Twitch', text: `Hivemind reads every chat message live through Twitch EventSub. Every ${windowSeconds} seconds it finds what chat actually agrees on, and speaks it out loud, as one character, right on stream. The meter shows the top opinions. The face shows the mood of the room: hyped, salty, confused, or chaotic.`, min: 28, footage: [] },
+  { id: 'how', title: 'How it works', text: `Under the hood, every message passes OpenAI moderation first, so trolls can't hijack the voice. Embeddings group messages by meaning, so “left”, “take the left door” and “go left at the statue” count as one opinion. ${chatModelLabel} merges those groups into intents, picks the mood, and writes the line.`, min: 22, footage: [] },
   { id: 'try', title: 'Try it', text: 'And judges don\'t have to install anything. Open the live site, hit Try it now, and you get your own sandbox. Type as chat, or run a scenario with hundreds of simulated viewers.', min: 23, footage: [] },
   { id: 'events', title: 'Events and dashboard', text: 'Raids, subs and cheers make the Hivemind react. And from the dashboard, the streamer can ask chat a question and hear the crowd\'s answer.', min: 30, footage: [] },
   { id: 'codex', title: 'Built with Codex', text: 'We built Hivemind with OpenAI Codex, in one main thread. We gave it a spec and a rulebook, and it scaffolded the server, wired up Twitch OAuth and EventSub, and built the overlay, the simulator and the tests. When live testing showed one opinion split into three bars, Codex added an AI merge step and fixed it. Then it made the app multi-tenant and ready to deploy online.', min: 30, footage: [] },
@@ -58,11 +63,12 @@ async function probe(file) {
 }
 function hash(text) { return createHash('sha256').update(text).digest('hex'); }
 async function generateVoiceovers() {
-  const voice = process.env.VIDEO_VOICE || 'onyx';
+  const voice = process.env.VIDEO_VOICE || 'nova';
+  const instructions = process.env.VIDEO_VOICE_INSTRUCTIONS || 'Warm, bright female tech-demo narrator. Confident and friendly, a little playful on the fun lines, clear diction, natural pacing with short pauses between sentences. Never rushed.';
   for (const scene of scenes) {
     const audioPath = path.join(voDir, `${scene.id}.mp3`);
     const metadataPath = path.join(voDir, `${scene.id}.json`);
-    const textHash = hash(`${scene.text}\n${process.env.OPENAI_TTS_MODEL}\n${voice}`);
+    const textHash = hash(`${scene.text}\n${process.env.OPENAI_TTS_MODEL}\n${voice}\n${instructions}`);
     let cached = false;
     if (await exists(audioPath) && await exists(metadataPath)) {
       try { cached = JSON.parse(await readFile(metadataPath, 'utf8')).hash === textHash; } catch {}
@@ -72,7 +78,7 @@ async function generateVoiceovers() {
         model: process.env.OPENAI_TTS_MODEL,
         voice,
         input: scene.text,
-        instructions: 'Energetic, confident tech-demo narrator, natural pacing.',
+        instructions,
         response_format: 'mp3'
       });
       await writeFile(audioPath, Buffer.from(await response.arrayBuffer()));
@@ -101,7 +107,7 @@ async function waitForSite() {
 }
 
 async function recordPage(browser, fileName, configure) {
-  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1, recordVideo: { dir: recordDir, size: { width: 1920, height: 1080 } } });
+  const context = await browser.newContext({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: SCALE, recordVideo: { dir: recordDir, size: { width: OUT_W, height: OUT_H } } });
   const page = await context.newPage();
   const video = page.video();
   try { await configure(page); }
@@ -114,29 +120,47 @@ async function recordPage(browser, fileName, configure) {
   return destination;
 }
 
+// One sandbox room per build: every recording reuses it, so rebuilds don't fill the 10-room limit.
+let sharedRoomId = '';
+async function createSharedRoom() {
+  const response = await fetch(`${baseUrl}/api/sandbox`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(20_000) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.roomId) throw new Error(`Sandbox creation failed: ${response.status} ${data.error || ''}`.trim());
+  sharedRoomId = data.roomId;
+  console.log(`Using sandbox room ${sharedRoomId} for all recordings.`);
+}
+async function useSharedRoom(page) {
+  if (sharedRoomId) await page.addInitScript((id) => localStorage.setItem('hivemind-sandbox-room', id), sharedRoomId);
+}
+async function countHiveUpdates(page) {
+  await page.addInitScript(() => {
+    const Original = window.WebSocket;
+    // Count only real hive_update frames from the embedded live overlay.
+    window.addEventListener('message', (event) => { if (event.data?.kind === 'hivemind-update') window.__hiveUpdates = (window.__hiveUpdates || 0) + 1; });
+    window.WebSocket = function(url, protocols) {
+      const ws = protocols === undefined ? new Original(url) : new Original(url, protocols);
+      ws.addEventListener('message', (event) => { try { if (JSON.parse(event.data).type === 'hive_update') { window.__hiveUpdates = (window.__hiveUpdates || 0) + 1; if (window.parent !== window) window.parent.postMessage({ kind: 'hivemind-update' }, '*'); } } catch {} });
+      return ws;
+    };
+    window.WebSocket.prototype = Original.prototype;
+    Object.assign(window.WebSocket, Original);
+  });
+}
 async function recordSite(browser) {
+  await createSharedRoom();
+  const offsets = {};
   const landing = await recordPage(browser, 'landing.webm', async (page) => {
+    await useSharedRoom(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page.waitForTimeout(1500);
     for (let i = 0; i < 36; i++) { await page.evaluate(() => window.scrollBy({ top: 18, behavior: 'smooth' })); await page.waitForTimeout(350); }
     await page.waitForTimeout(1500);
   });
 
-  let sandboxRoomId = '';
+  let sandboxRoomId = sharedRoomId;
   const sandbox = await recordPage(browser, 'sandbox.webm', async (page) => {
-    let updates = 0;
-    await page.addInitScript(() => {
-      const Original = window.WebSocket;
-      // Count only real hive_update frames from the embedded live overlay.
-      window.addEventListener('message', (event) => { if (event.data?.kind === 'hivemind-update') window.__hiveUpdates = (window.__hiveUpdates || 0) + 1; });
-      window.WebSocket = function(url, protocols) {
-        const ws = protocols === undefined ? new Original(url) : new Original(url, protocols);
-        ws.addEventListener('message', (event) => { try { if (JSON.parse(event.data).type === 'hive_update') { window.__hiveUpdates = (window.__hiveUpdates || 0) + 1; if (window.parent !== window) window.parent.postMessage({ kind: 'hivemind-update' }, '*'); } } catch {} });
-        return ws;
-      };
-      window.WebSocket.prototype = Original.prototype;
-      Object.assign(window.WebSocket, Original);
-    });
+    await useSharedRoom(page);
+    await countHiveUpdates(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     const linkCta = page.getByRole('link', { name: /try it now/i }).first();
     const buttonCta = page.getByRole('button', { name: /try it now/i }).first();
@@ -167,15 +191,23 @@ async function recordSite(browser) {
   });
 
   const events = await recordPage(browser, 'events.webm', async (page) => {
+    const began = Date.now();
+    await useSharedRoom(page);
+    await countHiveUpdates(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    let id = await page.evaluate(() => localStorage.getItem('hivemind-sandbox-room'));
-    if (!id) {
-      const created = await page.evaluate(async () => { const r = await fetch('/api/sandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (!r.ok) throw Error(`Sandbox creation failed: ${r.status}`); return r.json(); });
-      id = created.roomId;
-      await page.evaluate((roomId) => localStorage.setItem('hivemind-sandbox-room', roomId), id);
-    }
+    await page.waitForFunction(() => !!localStorage.getItem('hivemind-sandbox-room'), null, { timeout: 15_000 }).catch(() => undefined);
+    const id = await page.evaluate(() => localStorage.getItem('hivemind-sandbox-room')) || sandboxRoomId;
     const hasFakeButtons = await page.getByRole('button', { name: /fake raid/i }).count();
     if (!hasFakeButtons) await page.goto(`${baseUrl}/overlay/${id}`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    if (hasFakeButtons) await page.locator('#overlay').scrollIntoViewIfNeeded().catch(() => undefined);
+    // Fill the room with chat first, so the overlay shows live opinions instead of "The hive is listening…".
+    const hype = page.getByRole('button', { name: /hype moment/i });
+    if (await hype.count()) await hype.click();
+    else await page.evaluate(async (roomId) => fetch(`/api/sandbox/${roomId}/scenario`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenario: 'hype-moment' }) }), id);
+    const before = await page.evaluate(() => window.__hiveUpdates || 0);
+    await page.waitForFunction((n) => (window.__hiveUpdates || 0) > n, before, { timeout: (windowSeconds + 40) * 1000 }).catch(() => console.warn('No fresh hive_update before events; recording anyway.'));
+    await page.waitForTimeout(2500);
+    offsets.events = Math.max(0, (Date.now() - began) / 1000 - 1);
     for (const event of ['raid', 'sub', 'cheer']) {
       if (hasFakeButtons) await page.getByRole('button', { name: new RegExp(`fake ${event}`, 'i') }).click();
       else await page.evaluate(async ({ roomId, kind }) => fetch(`/api/sandbox/${roomId}/event`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind }) }), { roomId: id, kind: event });
@@ -185,6 +217,7 @@ async function recordSite(browser) {
   });
 
   const dashboard = await recordPage(browser, 'dashboard.webm', async (page) => {
+    await useSharedRoom(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page.waitForFunction(() => !!localStorage.getItem('hivemind-sandbox-room'), null, { timeout: 15_000 }).catch(() => undefined);
     let id = await page.evaluate(() => localStorage.getItem('hivemind-sandbox-room'));
@@ -206,12 +239,13 @@ async function recordSite(browser) {
     await page.waitForFunction((previous) => document.querySelector('#response-line')?.textContent !== previous, previousLine, { timeout: 45_000 }).catch(() => undefined);
     await page.waitForTimeout(2000);
   });
-  return { landing, sandbox, events, dashboard, sandboxRoomId };
+  await writeFile(path.join(recordDir, 'offsets.json'), JSON.stringify(offsets));
+  return { landing, sandbox, events, dashboard, sandboxRoomId, offsets };
 }
 
 async function saveScreenshot(page, file) { await page.screenshot({ path: file, fullPage: false }); }
 async function makeCards(browser) {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: SCALE });
   const basic = (title, subtitle) => `<!doctype html><style>*{box-sizing:border-box}body{margin:0;width:1920px;height:1080px;background:#0b0b12;color:white;font:700 46px/1.3 Arial,sans-serif;display:grid;place-items:center;text-align:center}.accent{color:#9146ff}.wrap{max-width:1450px;padding:90px}.small{font-size:28px;color:#c9c2d4;font-weight:400;margin-top:24px}.mark{width:90px;height:90px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f6d7ff,#9146ff 48%,#33205b);box-shadow:0 0 80px #9146ff88;margin:0 auto 34px}</style><div class="wrap"><div class="mark"></div><div>${title}</div><div class="small">${subtitle}</div></div>`;
   await page.setContent(basic('<span class="accent">HIVEMIND</span><br>1,000 voices, one mind', 'A crowd voice for live Twitch chat'));
   const title = path.join(cardDir, 'title.png'); await saveScreenshot(page, title);
@@ -223,8 +257,8 @@ async function makeCards(browser) {
     await saveScreenshot(page, path.join(cardDir, `placeholder-${clip.replace('.mp4', '')}.png`));
     console.warn(`Missing human clip ${clip}; placeholder card will be used.`);
   }
-  await page.setContent(`<!doctype html><style>*{box-sizing:border-box}body{margin:0;background:#0b0b12;color:white;width:1920px;height:1080px;font:700 36px Arial;display:flex;align-items:center;justify-content:center;gap:24px}.box{opacity:0;transform:translateY(24px);transition:all .6s;padding:28px 22px;border:2px solid #9146ff;border-radius:18px;background:#171421;min-width:275px;text-align:center}.box.show{opacity:1;transform:translateY(0)}.arrow{color:#9146ff}.label{position:absolute;top:100px;font-size:56px}</style><div class="label">HOW IT WORKS</div><div class="box">Twitch<br>EventSub</div><div class="arrow">→</div><div class="box">OpenAI<br>Moderation</div><div class="arrow">→</div><div class="box">Embeddings</div><div class="arrow">→</div><div class="box">GPT-4.1<br>intent merge</div><div class="arrow">→</div><div class="box">Voice +<br>overlay</div><script>document.querySelectorAll('.box').forEach((box,i)=>setTimeout(()=>box.classList.add('show'),700+i*850));</script>`);
-  const diagramContext = await browser.newContext({ viewport: { width: 1920, height: 1080 }, recordVideo: { dir: cardDir, size: { width: 1920, height: 1080 } } });
+  await page.setContent(`<!doctype html><style>*{box-sizing:border-box}body{margin:0;background:#0b0b12;color:white;width:1920px;height:1080px;font:700 36px Arial;display:flex;align-items:center;justify-content:center;gap:24px}.box{opacity:0;transform:translateY(24px);transition:all .6s;padding:28px 22px;border:2px solid #9146ff;border-radius:18px;background:#171421;min-width:275px;text-align:center}.box.show{opacity:1;transform:translateY(0)}.arrow{color:#9146ff}.label{position:absolute;top:100px;font-size:56px}</style><div class="label">HOW IT WORKS</div><div class="box">Twitch<br>EventSub</div><div class="arrow">→</div><div class="box">OpenAI<br>Moderation</div><div class="arrow">→</div><div class="box">Embeddings</div><div class="arrow">→</div><div class="box">${chatModelLabel}<br>intent merge</div><div class="arrow">→</div><div class="box">Voice +<br>overlay</div><script>document.querySelectorAll('.box').forEach((box,i)=>setTimeout(()=>box.classList.add('show'),700+i*850));</script>`);
+  const diagramContext = await browser.newContext({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: SCALE, recordVideo: { dir: cardDir, size: { width: OUT_W, height: OUT_H } } });
   const diagramPage = await diagramContext.newPage(); await diagramPage.setContent(await page.locator('body').evaluate((el) => el.parentElement.outerHTML));
   await diagramPage.waitForTimeout(6500); const diagramVideo = diagramPage.video(); await diagramContext.close();
   const diagramTemp = await diagramVideo.path(); const diagram = path.join(cardDir, 'diagram.webm');
@@ -255,7 +289,7 @@ async function buildScene(scene, sceneFootage, index) {
   sceneFootage.forEach((part, i) => {
     const duration = part.duration;
     const trim = part.sourceDuration ? `trim=duration=${Math.min(part.sourceDuration, duration)},` : '';
-    filters.push(`[${i}:v]${trim}scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=${duration},trim=duration=${duration},setpts=PTS-STARTPTS[v${i}]`);
+    filters.push(`[${i}:v]${trim}scale=${OUT_W}:${OUT_H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${OUT_W}:${OUT_H},setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=${duration},trim=duration=${duration},setpts=PTS-STARTPTS[v${i}]`);
   });
   if (sceneFootage.length === 1) filters.push('[v0]null[vbase]');
   else filters.push(`${sceneFootage.map((_part, i) => `[v${i}]`).join('')}concat=n=${sceneFootage.length}:v=1:a=0[vbase]`);
@@ -264,7 +298,7 @@ async function buildScene(scene, sceneFootage, index) {
     filters.push(`[${nativeAudioIndex}:a]volume=0.25,apad,atrim=duration=${scene.duration},asetpts=PTS-STARTPTS[ambience]`);
     filters.push('[voice][ambience]amix=inputs=2:duration=longest:normalize=0,atrim=duration=' + scene.duration + '[audio]');
   } else filters.push('[voice]anull[audio]');
-  args.push('-filter_complex', filters.join(';'), '-map', '[vbase]', '-map', '[audio]', '-t', String(scene.duration), '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output);
+  args.push('-filter_complex', filters.join(';'), '-map', '[vbase]', '-map', '[audio]', '-t', String(scene.duration), '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '17', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output);
   await run(ffmpeg, args);
   scene.file = output;
   return output;
@@ -323,7 +357,7 @@ async function assemble(cards, recordings) {
   scenes[2].footage = await exists(twitch) ? [real(twitch, { nativeAudio: twitch })] : [placeholder('twitch')];
   scenes[3].footage = [real(cards.diagram)];
   scenes[4].footage = [real(recordings.landing), real(recordings.sandbox, { sourceStart: 20 })];
-  scenes[5].footage = [real(recordings.events), real(recordings.dashboard, { sourceStart: 2 })];
+  scenes[5].footage = [real(recordings.events, recordings.offsets?.events ? { sourceStart: recordings.offsets.events } : {}), real(recordings.dashboard, { sourceStart: 2 })];
   scenes[6].footage = await exists(codex) ? [real(codex)] : [placeholder('codex')];
   scenes[7].footage = [real(cards.outro)];
   for (const [index, scene] of scenes.entries()) {
@@ -345,8 +379,8 @@ async function assemble(cards, recordings) {
   filters.push('[0:a]anull[a0]');
   for (let i = 1; i < scenes.length; i++) filters.push(`[a${i - 1}][${i}:a]acrossfade=d=0.3:c1=tri:c2=tri[a${i}]`);
   const subtitleFilterPath = subtitlePath.replace(/\\/g, '/').replace(':', '\\:').replaceAll("'", "\\'");
-  filters.push(`[v${scenes.length - 1}]subtitles='${subtitleFilterPath}':force_style='FontName=Arial,FontSize=44,PrimaryColour=&H00FFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=0,Shadow=0,Alignment=2,MarginV=50'[outv]`);
-  args.push('-filter_complex', filters.join(';'), '-map', '[outv]', '-map', `[a${scenes.length - 1}]`, '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', finalPath);
+  filters.push(`[v${scenes.length - 1}]subtitles='${subtitleFilterPath}':force_style='FontName=Arial,FontSize=12,Bold=1,PrimaryColour=&H00FFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2,MarginV=14'[outv]`);
+  args.push('-filter_complex', filters.join(';'), '-map', '[outv]', '-map', `[a${scenes.length - 1}]`, '-r', '30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '19', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', finalPath);
   await run(ffmpeg, args);
   const duration = await probe(finalPath);
   console.log('\nScene timings (0.3s crossfades included in the overall timeline):');
@@ -378,6 +412,7 @@ async function main() {
     if (process.env.VIDEO_REUSE_RECORDINGS === 'true') {
       for (const name of recordingNames) if (!await exists(path.join(recordDir, name))) throw new Error(`Cannot reuse missing recording ${name}.`);
       recordings = Object.fromEntries(recordingNames.map((name) => [name.replace('.webm', ''), path.join(recordDir, name)]));
+      recordings.offsets = await readFile(path.join(recordDir, 'offsets.json'), 'utf8').then(JSON.parse).catch(() => ({}));
       console.log('Reusing completed real-site recordings from video/build/recordings/.');
     } else recordings = await recordSite(browser);
     const cards = await makeCards(browser);
