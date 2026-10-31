@@ -11,14 +11,15 @@ All code lives in `video/`. Use only npm packages, no global installs: `ffmpeg-s
 (`npx playwright install chromium`), and the existing `openai` + `dotenv`.
 
 1. **Voiceover**: for each scene below, call OpenAI TTS (`OPENAI_TTS_MODEL`, female voice from `VIDEO_VOICE`, default `nova`,
-   with delivery from `VIDEO_VOICE_INSTRUCTIONS`, default: warm, bright, confident female narrator, natural pacing). Cache the result in `video/build/vo/<scene>.mp3`
+   with delivery from `VIDEO_VOICE_INSTRUCTIONS`, default: upbeat, energetic, brisk female narrator). Speed it up with ffmpeg `atempo`
+   (`VIDEO_VOICE_SPEED`, default 1.12) without changing pitch. Cache the result in `video/build/vo/<scene>.mp3`
    and skip regeneration when the text hash hasn't changed. Measure each clip's duration with ffprobe.
 2. **Subtitles**: split each scene's narration into sentence chunks of at most 42 characters per line and 2 lines per cue, and time
    them proportionally to word count across the measured VO duration. Write `video/out/hivemind-demo.srt`
    (also uploaded to YouTube as captions) and burn the same subtitles into the video: white text,
    semi-transparent black box, bottom center, bold sans-serif. Use SRT-relative sizes (`FontSize=12`, `MarginV=14` on the
    288px libass canvas) so captions scale with the output resolution.
-3. **Auto-recorded footage**: use Playwright (headed Chromium, 1920x1080 viewport at 2x device scale, 3840x2160 `recordVideo`) to record the site at
+3. **Auto-recorded footage**: use Playwright (headed Chromium, 1920x1080 `recordVideo`, upscaled to 4K with lanczos; Playwright pads frames if asked to record above the viewport) to record the site at
    `VIDEO_BASE_URL` (default `https://hivemind-qefg.onrender.com`). Wake it with `/health` first and wait until it responds.
    - `landing.webm`: the landing page, slow scroll.
    - `sandbox.webm`: click "Try it now", start the `wrong-way` scenario, type 3 chat messages into the chat box with

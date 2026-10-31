@@ -25,8 +25,10 @@ const subtitlePath = path.join(outDir, 'hivemind-demo.srt');
 const baseUrl = (process.env.VIDEO_BASE_URL || 'https://hivemind-qefg.onrender.com').replace(/\/$/, '');
 const repoUrl = process.env.VIDEO_REPO_URL || 'https://github.com/Blop77/Codex';
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-// 4K output. Pages render at 1920x1080 CSS pixels with a 2x device scale, so text stays sharp.
+// 4K output. Playwright's video recorder can't capture above the 1080p viewport (frames come out
+// padded), so live-site recordings are 1080p and upscaled; still cards are screenshotted at true 4K.
 const OUT_W = 3840, OUT_H = 2160, VIEW_W = 1920, VIEW_H = 1080, SCALE = OUT_W / VIEW_W;
+const voiceSpeed = Math.min(1.5, Math.max(0.8, Number(process.env.VIDEO_VOICE_SPEED) || 1.12));
 // Narration must match what the deployed site does (render.yaml). These read the same env vars.
 const windowSeconds = Math.max(5, Number(process.env.WINDOW_SECONDS) || 20);
 const chatModelLabel = (process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini').replace(/^gpt/i, 'GPT').replace(/-mini$/i, ' mini');
@@ -64,7 +66,7 @@ async function probe(file) {
 function hash(text) { return createHash('sha256').update(text).digest('hex'); }
 async function generateVoiceovers() {
   const voice = process.env.VIDEO_VOICE || 'nova';
-  const instructions = process.env.VIDEO_VOICE_INSTRUCTIONS || 'Warm, bright female tech-demo narrator. Confident and friendly, a little playful on the fun lines, clear diction, natural pacing with short pauses between sentences. Never rushed.';
+  const instructions = process.env.VIDEO_VOICE_INSTRUCTIONS || 'Upbeat, energetic female tech-demo narrator with a brisk, lively pace. Bright and confident, like a launch video. Keep pauses short and keep the energy up.';
   for (const scene of scenes) {
     const audioPath = path.join(voDir, `${scene.id}.mp3`);
     const metadataPath = path.join(voDir, `${scene.id}.json`);
@@ -85,8 +87,13 @@ async function generateVoiceovers() {
       await writeFile(metadataPath, JSON.stringify({ hash: textHash, model: process.env.OPENAI_TTS_MODEL, voice }));
       console.log(`TTS generated: ${scene.id}`);
     } else console.log(`TTS cached: ${scene.id}`);
+    // Speed up the narration without changing pitch (VIDEO_VOICE_SPEED, default 1.12).
     scene.voice = audioPath;
-    scene.voiceDuration = await probe(audioPath);
+    if (voiceSpeed !== 1) {
+      scene.voice = path.join(voDir, `${scene.id}-x${voiceSpeed}.wav`);
+      await run(ffmpeg, ['-y', '-i', audioPath, '-filter:a', `atempo=${voiceSpeed}`, scene.voice]);
+    }
+    scene.voiceDuration = await probe(scene.voice);
     scene.duration = Math.max(scene.voiceDuration + 0.4, scene.min);
   }
 }
@@ -107,7 +114,7 @@ async function waitForSite() {
 }
 
 async function recordPage(browser, fileName, configure) {
-  const context = await browser.newContext({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: SCALE, recordVideo: { dir: recordDir, size: { width: OUT_W, height: OUT_H } } });
+  const context = await browser.newContext({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: 1, recordVideo: { dir: recordDir, size: { width: VIEW_W, height: VIEW_H } } });
   const page = await context.newPage();
   const video = page.video();
   try { await configure(page); }
@@ -258,7 +265,7 @@ async function makeCards(browser) {
     console.warn(`Missing human clip ${clip}; placeholder card will be used.`);
   }
   await page.setContent(`<!doctype html><style>*{box-sizing:border-box}body{margin:0;background:#0b0b12;color:white;width:1920px;height:1080px;font:700 36px Arial;display:flex;align-items:center;justify-content:center;gap:24px}.box{opacity:0;transform:translateY(24px);transition:all .6s;padding:28px 22px;border:2px solid #9146ff;border-radius:18px;background:#171421;min-width:275px;text-align:center}.box.show{opacity:1;transform:translateY(0)}.arrow{color:#9146ff}.label{position:absolute;top:100px;font-size:56px}</style><div class="label">HOW IT WORKS</div><div class="box">Twitch<br>EventSub</div><div class="arrow">→</div><div class="box">OpenAI<br>Moderation</div><div class="arrow">→</div><div class="box">Embeddings</div><div class="arrow">→</div><div class="box">${chatModelLabel}<br>intent merge</div><div class="arrow">→</div><div class="box">Voice +<br>overlay</div><script>document.querySelectorAll('.box').forEach((box,i)=>setTimeout(()=>box.classList.add('show'),700+i*850));</script>`);
-  const diagramContext = await browser.newContext({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: SCALE, recordVideo: { dir: cardDir, size: { width: OUT_W, height: OUT_H } } });
+  const diagramContext = await browser.newContext({ viewport: { width: VIEW_W, height: VIEW_H }, deviceScaleFactor: 1, recordVideo: { dir: cardDir, size: { width: VIEW_W, height: VIEW_H } } });
   const diagramPage = await diagramContext.newPage(); await diagramPage.setContent(await page.locator('body').evaluate((el) => el.parentElement.outerHTML));
   await diagramPage.waitForTimeout(6500); const diagramVideo = diagramPage.video(); await diagramContext.close();
   const diagramTemp = await diagramVideo.path(); const diagram = path.join(cardDir, 'diagram.webm');

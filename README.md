@@ -53,7 +53,7 @@ See [SPEC.md](SPEC.md) for room routes and the WebSocket message contract.
 
 ## Making the demo video
 
-Set `OPENAI_API_KEY` and `OPENAI_TTS_MODEL` in `.env`. By default the recorder visits `https://hivemind-qefg.onrender.com`; override it with `VIDEO_BASE_URL` if the demo is hosted elsewhere. Optionally set `VIDEO_VOICE` (defaults to the female voice `nova`), `VIDEO_VOICE_INSTRUCTIONS` and `VIDEO_REPO_URL`. The output is 4K (3840×2160) with burned-in subtitles plus a `.srt` for YouTube captions.
+Set `OPENAI_API_KEY` and `OPENAI_TTS_MODEL` in `.env`. By default the recorder visits `https://hivemind-qefg.onrender.com`; override it with `VIDEO_BASE_URL` if the demo is hosted elsewhere. Optionally set `VIDEO_VOICE` (defaults to the female voice `nova`), `VIDEO_VOICE_INSTRUCTIONS`, `VIDEO_VOICE_SPEED` (default 1.12) and `VIDEO_REPO_URL`. The output is 4K (3840×2160) with burned-in subtitles plus a `.srt` for YouTube captions.
 
 Install the project dependencies and Playwright's bundled Chromium browser (no system ffmpeg or global browser install is used):
 
