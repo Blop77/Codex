@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hivemind OBS Overlay</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --glow:#ff4d98; --glow2:#ff9f68; --ink:#f6f4ff; --muted:#b7b4cb; --panel:rgba(17,14,33,.82); --line:rgba(255,255,255,.13); }
+    * { box-sizing:border-box; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; background:transparent; }
+    body { color:var(--ink); }
+    #scene { position:absolute; left:54px; bottom:48px; width:min(1120px,calc(100vw - 80px)); display:grid; grid-template-columns:330px 1fr; align-items:end; gap:22px; transform-origin:bottom left; }
+    #scene[data-mood="hyped"] { --glow:#ff4d98; --glow2:#ff9f68; }
+    #scene[data-mood="bored"] { --glow:#75b9ee; --glow2:#9de2ed; }
+    #scene[data-mood="salty"] { --glow:#ff5f54; --glow2:#ff9b48; }
+    #scene[data-mood="confused"] { --glow:#a58bff; --glow2:#76d7f2; }
+    #scene[data-mood="wholesome"] { --glow:#64e6bd; --glow2:#b5ee9b; }
+    #scene[data-mood="chaotic"] { --glow:#ffe15b; --glow2:#ff718d; }
+    .character { position:relative; display:flex; justify-content:center; align-items:flex-end; min-height:335px; filter:drop-shadow(0 0 30px color-mix(in srgb,var(--glow) 30%,transparent)); animation:float 3.8s ease-in-out infinite; }
+    .character::before { content:""; position:absolute; width:290px; height:72px; bottom:5px; border-radius:50%; background:radial-gradient(ellipse, color-mix(in srgb,var(--glow) 32%, transparent),transparent 70%); filter:blur(9px); }
+    #face { width:300px; height:325px; overflow:visible; position:relative; z-index:1; transform:scale(var(--face-scale,1.02)); transform-origin:bottom center; animation:pulse var(--pulse-speed,1.8s) ease-in-out infinite; }
+    .orb { fill:url(#orbFill); stroke:color-mix(in srgb,var(--glow) 85%,white); stroke-width:4; }
+    .orb-shadow { fill:rgba(6,7,21,.35); }
+    .halo { fill:none; stroke:var(--glow); stroke-width:2; opacity:.45; transform-origin:150px 155px; animation:halo 7s linear infinite; }
+    .eye { fill:#18152a; transform-box:fill-box; transform-origin:center; transition:all .25s; }
+    .eye-shine { fill:#fff; }
+    .brow { fill:none; stroke:#25213c; stroke-width:8; stroke-linecap:round; transition:all .25s; }
+    .mouth { display:none; fill:none; stroke:#241d39; stroke-width:8; stroke-linecap:round; stroke-linejoin:round; }
+    #face[data-mood="hyped"] .mouth-hyped, #face[data-mood="bored"] .mouth-bored, #face[data-mood="salty"] .mouth-salty, #face[data-mood="confused"] .mouth-confused, #face[data-mood="wholesome"] .mouth-wholesome, #face[data-mood="chaotic"] .mouth-chaotic { display:block; }
+    #face[data-mood="bored"] .eye { transform:scaleY(.22); }
+    #face[data-mood="salty"] .brow-left { transform:rotate(20deg); }
+    #face[data-mood="salty"] .brow-right { transform:rotate(-20deg); }
+    #face[data-mood="confused"] .brow-left { transform:translateY(-8px) rotate(-8deg); }
+    #face[data-mood="confused"] .brow-right { transform:translateY(5px) rotate(13deg); }
+    #face[data-mood="wholesome"] .eye { transform:scaleY(.7); }
+    #face[data-mood="chaotic"] .eye-left { transform:rotate(-14deg) scaleY(.78); }
+    #face[data-mood="chaotic"] .eye-right { transform:rotate(13deg) scaleY(1.08); }
+    .cheek { fill:#ff758e; opacity:.65; }
+    .spark { fill:var(--glow2); transform-box:fill-box; transform-origin:center; animation:twinkle 1.7s ease-in-out infinite alternate; }
+    .spark:nth-of-type(2n) { animation-delay:.7s; }
+    .content { padding-bottom:20px; min-width:0; }
+    .speech { position:relative; min-height:116px; padding:22px 27px 24px; border:1px solid color-mix(in srgb,var(--glow) 50%,var(--line)); border-radius:25px 25px 25px 8px; background:linear-gradient(135deg,rgba(27,23,49,.94),rgba(14,13,29,.88)); box-shadow:0 16px 42px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.08),0 0 30px color-mix(in srgb,var(--glow) 14%,transparent); backdrop-filter:blur(12px); }
+    .speech::before { content:""; position:absolute; left:-12px; bottom:17px; width:22px; height:22px; background:#1b1731; border-left:1px solid color-mix(in srgb,var(--glow) 50%,var(--line)); border-bottom:1px solid color-mix(in srgb,var(--glow) 50%,var(--line)); transform:rotate(45deg); }
+    .eyebrow { display:flex; align-items:center; gap:9px; margin-bottom:10px; color:var(--glow2); font-size:12px; letter-spacing:.18em; text-transform:uppercase; font-weight:800; }
+    .mood-dot { width:8px; height:8px; border-radius:50%; background:var(--glow); box-shadow:0 0 12px var(--glow); }
+    #line { margin:0; min-height:34px; font-size:25px; line-height:1.3; font-weight:700; letter-spacing:-.02em; }
+    #cursor { display:inline-block; margin-left:2px; color:var(--glow2); animation:blink .7s steps(2,start) infinite; }
+    .meter { margin-top:16px; padding:17px 20px 16px; border:1px solid var(--line); border-radius:20px; background:var(--panel); box-shadow:0 16px 40px rgba(0,0,0,.23); backdrop-filter:blur(12px); }
+    .meter-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .meter-title { margin:0; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); font-weight:800; }
+    #window-label { font-size:11px; color:#89869d; }
+    #clusters { display:grid; gap:12px; }
+    .cluster { display:grid; grid-template-columns:minmax(140px,180px) 1fr 52px; align-items:center; column-gap:12px; row-gap:4px; }
+    .cluster-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:750; }
+    .share { text-align:right; font-size:15px; font-weight:850; font-variant-numeric:tabular-nums; color:var(--glow2); }
+    .track { height:9px; grid-column:2; grid-row:1; border-radius:9px; background:rgba(255,255,255,.1); overflow:hidden; }
+    .bar { width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--glow),var(--glow2)); box-shadow:0 0 14px color-mix(in srgb,var(--glow) 48%,transparent); transition:width .8s cubic-bezier(.2,.7,.2,1); }
+    .examples { grid-column:1 / -1; color:#aaa6bc; font-size:12px; line-height:1.3; padding-left:1px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .empty { padding:8px 0; color:#858198; font-size:13px; }
+    .hud { position:absolute; right:54px; top:48px; display:flex; align-items:center; gap:12px; }
+    .rate-card,.connection { border:1px solid var(--line); background:rgba(15,13,30,.7); backdrop-filter:blur(10px); border-radius:16px; padding:11px 16px; box-shadow:0 9px 30px rgba(0,0,0,.2); }
+    .rate-card { display:flex; gap:10px; align-items:baseline; }
+    #rate { font-size:22px; font-weight:850; font-variant-numeric:tabular-nums; }
+    .rate-caption { color:var(--muted); font-size:10px; letter-spacing:.13em; text-transform:uppercase; font-weight:800; }
+    .connection { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px; }
+    #connection-dot { width:7px; height:7px; border-radius:50%; background:#ff657b; box-shadow:0 0 10px currentColor; }
+    .connected #connection-dot { background:#66edbd; }
+    #sound-enable { display:none; position:absolute; right:54px; bottom:48px; border:1px solid var(--line); border-radius:999px; padding:12px 17px; color:white; background:rgba(20,18,36,.9); cursor:pointer; }
+    #event-toast { position:absolute; left:50%; top:9%; transform:translate(-50%,-15px) scale(.8); opacity:0; pointer-events:none; padding:15px 25px; border:1px solid color-mix(in srgb,var(--glow) 68%,white); border-radius:99px; background:rgba(20,16,37,.9); color:white; font-size:18px; font-weight:800; box-shadow:0 0 34px color-mix(in srgb,var(--glow) 35%,transparent); transition:opacity .25s,transform .3s; white-space:nowrap; }
+    #scene.event-active #event-toast { opacity:1; transform:translate(-50%,0) scale(1); }
+    #scene.event-raid #face { animation:absorb 1.15s cubic-bezier(.2,.8,.2,1); }
+    #scene.event-sub #face { animation:celebrate .9s ease-in-out; }
+    #scene.event-cheer #face { animation:cheer .9s ease-in-out; }
+    #scene.event-follow #face { animation:follow .9s ease-in-out; }
+    @keyframes float { 0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)} }
+    @keyframes pulse { 0%,100%{filter:drop-shadow(0 0 12px color-mix(in srgb,var(--glow) var(--glow-opacity,40%),transparent))}50%{filter:drop-shadow(0 0 34px color-mix(in srgb,var(--glow) var(--glow-opacity,40%),transparent))} }
+    @keyframes halo { to{transform:rotate(360deg)} }
+    @keyframes twinkle { from{opacity:.35;transform:scale(.75) rotate(0)}to{opacity:1;transform:scale(1.15) rotate(25deg)} }
+    @keyframes blink { to{visibility:hidden} }
+    @keyframes absorb { 0%{transform:scale(1)}35%{transform:scale(.72,1.22)}68%{transform:scale(1.23,.83)}100%{transform:scale(1)} }
+    @keyframes celebrate { 0%,100%{transform:translateY(0) rotate(0)}35%{transform:translateY(-32px) rotate(-7deg)}70%{transform:translateY(-5px) rotate(7deg)} }
+    @keyframes cheer { 0%,100%{transform:scale(1)}30%{transform:scale(1.22)}60%{transform:scale(.92)} }
+    @keyframes follow { 0%,100%{transform:translateY(0) rotate(0)}30%{transform:translateY(-18px) rotate(9deg)}60%{transform:translateY(0) rotate(-8deg)} }
+    @media(max-width:850px) { #scene{left:20px;bottom:20px;width:calc(100vw - 40px);grid-template-columns:185px 1fr;gap:8px}.character{min-height:235px}#face{width:205px;height:230px}.content{padding-bottom:8px}#line{font-size:18px}.speech{min-height:95px;padding:17px}.meter{padding:12px}.cluster{grid-template-columns:minmax(90px,130px) 1fr 43px}.hud{right:20px;top:20px}.rate-card{padding:8px 11px}#sound-enable{right:20px;bottom:20px} }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div class="rate-card"><strong id="rate">0</strong><span class="rate-caption">msgs / min</span></div>
+    <div class="connection" id="connection"><span id="connection-dot"></span><span id="connection-label">Connecting</span></div>
+  </div>
+  <div id="event-toast" role="status"></div>
+  <main id="scene" data-mood="hyped" style="--intensity:.35">
+    <div class="character" aria-label="Animated Hivemind character">
+      <svg id="face" data-mood="hyped" viewBox="0 0 300 325" role="img" aria-label="Hivemind face">
+        <defs>
+          <radialGradient id="orbFill" cx="34%" cy="24%" r="82%"><stop offset="0" stop-color="#fff" stop-opacity=".27"/><stop offset=".38" stop-color="var(--glow)" stop-opacity=".93"/><stop offset="1" stop-color="#211a42"/></radialGradient>
+          <linearGradient id="shine" x2=".8" y2="1"><stop stop-color="#fff" stop-opacity=".46"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        </defs>
+        <circle class="halo" cx="150" cy="155" r="135" stroke-dasharray="4 9"/>
+        <path class="spark" d="M42 91l5 13 13 5-13 5-5 13-5-13-13-5 13-5z"/><path class="spark" d="M252 113l4 10 10 4-10 4-4 10-4-10-10-4 10-4z"/><circle class="spark" cx="66" cy="204" r="4"/><circle class="spark" cx="233" cy="218" r="5"/>
+        <ellipse class="orb-shadow" cx="150" cy="302" rx="79" ry="13"/>
+        <path class="orb" d="M150 27c-69 0-119 50-119 123 0 69 46 128 119 128s119-59 119-128C269 77 219 27 150 27z"/>
+        <path d="M83 56c20-17 43-24 69-24 37 0 69 15 90 42-44-13-89-10-129 8-14 6-26 14-38 24-9-19-7-36 8-50z" fill="url(#shine)" opacity=".7"/>
+        <ellipse class="eye" cx="108" cy="145" rx="13" ry="17"/><ellipse class="eye" cx="192" cy="145" rx="13" ry="17"/>
+        <circle class="eye-shine" cx="112" cy="139" r="4"/><circle class="eye-shine" cx="196" cy="139" r="4"/>
+        <path class="brow brow-left" d="M87 116q20-13 39-2"/><path class="brow brow-right" d="M174 114q19-11 39 2"/>
+        <ellipse class="cheek" cx="78" cy="178" rx="17" ry="9"/><ellipse class="cheek" cx="222" cy="178" rx="17" ry="9"/>
+        <path class="mouth mouth-hyped" d="M112 188q38 52 76 0"/><path class="mouth mouth-bored" d="M128 197q22-4 44 0"/>
+        <path class="mouth mouth-salty" d="M116 208q34-30 68 0"/><path class="mouth mouth-confused" d="M124 194q13 11 26 0t26 0"/>
+        <path class="mouth mouth-wholesome" d="M115 190q35 42 70 0"/><path class="mouth mouth-chaotic" d="M119 190q12 10 23 0t23 0 17 0"/>
+      </svg>
+    </div>
+    <section class="content" aria-live="polite">
+      <div class="speech">
+        <div class="eyebrow"><span class="mood-dot"></span><span id="mood-label">Hyped hive</span></div>
+        <p id="line"><span id="typed">The hive is listening...</span><span id="cursor">▍</span></p>
+      </div>
+      <div class="meter">
+        <div class="meter-head"><h2 class="meter-title">Room consensus</h2><span id="window-label">20 second window</span></div>
+        <div id="clusters"><div class="empty">Waiting for chat to find its signal...</div></div>
+      </div>
+    </section>
+  </main>
+  <button id="sound-enable" type="button">Enable Hivemind audio</button>
+  <script>
+    (() => {
+      const scene = document.querySelector('#scene');
+      const face = document.querySelector('#face');
+      const typed = document.querySelector('#typed');
+      const moodLabel = document.querySelector('#mood-label');
+      const connection = document.querySelector('#connection');
+      const connectionLabel = document.querySelector('#connection-label');
+      const soundButton = document.querySelector('#sound-enable');
+      const moods = ['hyped','bored','salty','confused','wholesome','chaotic'];
+      let retry = 500, socket, typingTimer, eventTimer, audio, soundEnabled = true;
+      function typeLine(text) {
+        clearInterval(typingTimer); typed.textContent = ''; let index = 0;
+        typingTimer = setInterval(() => { typed.textContent += text.charAt(index++); if (index >= text.length) clearInterval(typingTimer); }, 25);
+      }
+      function renderClusters(clusters) {
+        const container = document.querySelector('#clusters'); container.replaceChildren();
+        if (!Array.isArray(clusters) || !clusters.length) { const empty=document.createElement('div'); empty.className='empty'; empty.textContent='Waiting for chat to find its signal...'; container.append(empty); return; }
+        clusters.slice(0,3).forEach((item) => {
+          const row=document.createElement('div'); row.className='cluster';
+          const label=document.createElement('div'); label.className='cluster-label'; label.textContent=item.label || 'Chat signal';
+          const track=document.createElement('div'); track.className='track'; const bar=document.createElement('div'); bar.className='bar'; track.append(bar);
+          const percent=document.createElement('div'); percent.className='share'; percent.textContent=`${Math.round((Number(item.share)||0)*100)}%`;
+          const examples=document.createElement('div'); examples.className='examples'; examples.textContent=Array.isArray(item.examples)?item.examples.slice(0,3).join('  ·  '):'';
+          row.append(label,track,percent,examples); container.append(row);
+          requestAnimationFrame(()=>bar.style.width=`${Math.max(0,Math.min(100,(Number(item.share)||0)*100))}%`);
+        });
+      }
+      function playAudio(url) {
+        if (audio) { audio.pause(); audio = undefined; }
+        if (!url || !soundEnabled) return;
+        audio = new Audio(url); audio.volume = 1; audio.play().then(()=>soundButton.style.display='none').catch(()=>{soundButton.style.display='block';});
+      }
+      soundButton.addEventListener('click',()=>{soundEnabled=true; if(audio) audio.play().catch(()=>{}); soundButton.style.display='none';});
+      function handleEvent(message) {
+        const kind=message.kind || ''; scene.classList.remove('event-raid','event-sub','event-cheer','event-follow','event-active'); void scene.offsetWidth;
+        if(['raid','sub','cheer','follow'].includes(kind)) scene.classList.add(`event-${kind}`);
+        const wording={raid:`Absorbing ${message.amount||0} raiders · welcome ${message.user||'new friends'}!`,sub:`${message.user||'A new member'} joined the hive!`,cheer:`${message.user||'Chat'} sent ${message.amount||0} Bits!`,follow:`${message.user||'A new friend'} found the hive!`};
+        const toast=document.querySelector('#event-toast'); toast.textContent=wording[kind]||'The hive feels the room shift'; scene.classList.add('event-active');
+        clearTimeout(eventTimer); eventTimer=setTimeout(()=>scene.classList.remove('event-active',`event-${kind}`),2400);
+      }
+      function handleMessage(message) {
+        if(message.type==='status') { connection.classList.toggle('connected',!!message.connected); connectionLabel.textContent=message.connected?'Hive connected':'Reconnecting'; return; }
+        if(message.type==='event') { handleEvent(message); return; }
+        if(message.type!=='hive_update') return;
+        const mood=moods.includes(message.mood)?message.mood:'confused'; scene.dataset.mood=mood; face.dataset.mood=mood;
+        const intensity=Math.max(0,Math.min(1,Number(message.intensity)||0)); scene.style.setProperty('--intensity',intensity); scene.style.setProperty('--face-scale',(1+intensity*.07).toFixed(3)); scene.style.setProperty('--pulse-speed',(2.2-intensity*1.25).toFixed(2)+'s'); scene.style.setProperty('--glow-opacity',(25+intensity*55)+'%');
+        moodLabel.textContent=`${mood} hive`; typeLine(String(message.line||''));
+        document.querySelector('#rate').textContent=String(Math.max(0,Number(message.msgsPerMin)||0));
+        document.querySelector('#window-label').textContent=`${Math.max(1,Number(message.windowSeconds)||20)} second window`;
+        renderClusters(message.clusters); playAudio(message.audioUrl);
+      }
+      function connect() {
+        const scheme=location.protocol==='https:'?'wss:':'ws:'; socket=new WebSocket(`${scheme}//${location.host}/ws`);
+        socket.addEventListener('open',()=>{retry=500;connectionLabel.textContent='Hive connected';connection.classList.add('connected');});
+        socket.addEventListener('message',(event)=>{try{handleMessage(JSON.parse(event.data));}catch(error){console.warn('Bad Hivemind message',error);}});
+        socket.addEventListener('close',()=>{connection.classList.remove('connected');connectionLabel.textContent='Reconnecting';setTimeout(connect,retry);retry=Math.min(10000,retry*1.8);});
+        socket.addEventListener('error',()=>socket.close());
+      }
+      connect();
+    })();
+  </script>
+</body>
+</html>
