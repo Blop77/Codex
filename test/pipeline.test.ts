@@ -30,7 +30,7 @@ test('clustering rejects mismatched message and embedding counts', () => {
   assert.throws(() => clusterByCosine(messages, [[1, 0]], 0.7), /counts must match/);
 });
 
-test('intent merging combines shares, carries merged examples, sorts by share, and omits leftovers', () => {
+test('intent merging combines shares, carries evidence, filters noise, sorts and omits leftovers', () => {
   const clusterShares = [0.2, 0.18, 0.16, 0.22, 0.12, 0.1];
   const examples = ['Go left', 'Left door', 'Trust the left path', 'Heal first', 'Explore the statue', 'Unrelated noise'];
   const clusters = clusterShares.map((share, index) => ({
@@ -73,7 +73,7 @@ test('intent labels stay within three words and remove generic banned terms', ()
   assert.equal(cleanIntentLabel('Cautious recommendations, advice'), 'CAUTIOUS');
 });
 
-test('intent labels unsupported by their exact examples fall back to the example action', () => {
+test('intent merging trusts the model label after light cleanup', () => {
   const cluster = {
     share: 0.62,
     members: [{ ...messages[0], text: 'All damage, burn the boss!' }]
@@ -81,14 +81,31 @@ test('intent labels unsupported by their exact examples fall back to the example
   const [merged] = mergeIntentGroups([cluster], [{
     clusterIndexes: [0], label: 'Cautious Play', evidence: 'All damage, burn the boss!', isOpinion: true
   }]);
-  assert.equal(merged.label, 'BURN BOSS');
+  assert.equal(merged.label, 'CAUTIOUS PLAY');
 });
 
-test('crowd line names the top opinion and exact share in first-person plural under 18 words', () => {
-  const line = formatCrowdLine('We say left. Sixty percent of us. Keep moving!', { label: 'GO LEFT', share: 0.6 });
-  assert.equal(line, 'We say left. Sixty percent of us.');
-  assert.ok(line.split(/\s+/).length < 18);
-  assert.equal(formatCrowdLine('Pick fast.' , { label: 'HEAL FIRST', share: 0.42 }), 'We say HEAL FIRST. 42% of us.');
-  assert.equal(formatCrowdLine('WE SAY GO LEFT. Twenty-one percent of us. Don\'t make us repeat it.', { label: 'GO LEFT', share: 0.6 }), 'We say GO LEFT. 60% of us.');
-  assert.equal(formatCrowdLine('Any line'), 'We are still finding the signal. Give us a moment.');
+test('duplicate cleaned labels combine their shares and examples', () => {
+  const clusters = [0.4, 0.3, 0.2].map((share, index) => ({
+    share,
+    members: [{ ...messages[index], text: `example ${index}` }]
+  }));
+  const [merged] = mergeIntentGroups(clusters, [
+    { clusterIndexes: [0], label: 'Go left', evidence: 'example 0', isOpinion: true },
+    { clusterIndexes: [1], label: 'go left', evidence: 'example 1', isOpinion: true },
+    { clusterIndexes: [2], label: 'Right', evidence: 'example 2', isOpinion: true }
+  ]);
+  assert.equal(merged.label, 'GO LEFT');
+  assert.equal(merged.share, 0.7);
+  assert.deepEqual(merged.examples, ['example 0', 'example 1']);
+});
+
+test('model crowd line is trusted and only empty or overlong lines use varying fallbacks', () => {
+  assert.equal(formatCrowdLine('We are split, but most of us want the left path. 62% is convincing.', { label: 'GO LEFT', share: 0.62 }), 'We are split, but most of us want the left path. 62% is convincing.');
+  const longLine = Array(26).fill('word').join(' ');
+  const first = formatCrowdLine(longLine, { label: 'GO LEFT', share: 0.6 });
+  const second = formatCrowdLine('', { label: 'GO LEFT', share: 0.6 });
+  assert.notEqual(first, second);
+  assert.match(first, /GO LEFT/);
+  assert.match(second, /GO LEFT/);
+  assert.equal(formatCrowdLine('Short model line'), 'Short model line');
 });
