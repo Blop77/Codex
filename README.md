@@ -53,7 +53,7 @@ See [SPEC.md](SPEC.md) for room routes and the WebSocket message contract.
 
 ## Making the demo video
 
-Set `OPENAI_API_KEY` and `OPENAI_TTS_MODEL` in `.env`. By default the recorder visits `https://hivemind-qefg.onrender.com`; override it with `VIDEO_BASE_URL` if the demo is hosted elsewhere. Optionally set `VIDEO_VOICE` (defaults to the female voice `nova`), `VIDEO_VOICE_INSTRUCTIONS`, `VIDEO_VOICE_SPEED` (default 1.12) and `VIDEO_REPO_URL`. The output is 4K (3840×2160) with burned-in subtitles plus a `.srt` for YouTube captions.
+Set `OPENAI_API_KEY` and `OPENAI_TTS_MODEL` in `.env`, then run `npm run video`. It makes a 4K video with an upbeat female voiceover (`VIDEO_VOICE`, default `nova`) and subtitles, from the live site at `VIDEO_BASE_URL` (default `https://hivemind-qefg.onrender.com`). Add `video/clips/twitch.mp4` (required) and `video/clips/codex.mp4`. Use `npm run video -- --dry` to preview without OpenAI calls. See `video/BRIEF.md` for every option.
 
 Install the project dependencies and Playwright's bundled Chromium browser (no system ffmpeg or global browser install is used):
 
@@ -63,4 +63,4 @@ npx playwright install chromium
 npm run video
 ```
 
-The script caches per-scene OpenAI narration in `video/build/vo/`, records the live site with headed Playwright, creates title/diagram/outro cards, writes YouTube captions, and renders `video/out/hivemind-demo.mp4` under 2:58. Add human recordings to `video/clips/twitch.mp4` and `video/clips/codex.mp4` before the final submission build; optional `hook.mp4` replaces the opening Twitch excerpt. Missing clips are visibly marked with placeholder cards. Generated media in `video/build/`, `video/out/`, and `video/clips/` is gitignored.
+The script caches narration in `video/build/vo/` and motion graphics in `video/build/motion/`, so reruns are faster. It records the live site with Playwright, renders the motion graphics at 4K, and writes `video/out/hivemind-demo.mp4` (under 2:58) plus `hivemind-demo.srt` for YouTube captions. Missing clips get clearly marked placeholder cards. Generated media in `video/build/`, `video/out/`, and `video/clips/` is gitignored.
