@@ -52,6 +52,26 @@ test('intent merging combines shares, carries evidence, filters noise, sorts and
   assert.equal(merged.some((group) => group.examples.includes('Unrelated noise')), false);
 });
 
+test('paraphrases for the left route merge into one intent instead of three bars', () => {
+  const paraphrases = ['go left', 'take the left door', 'left at the statue'];
+  const clusters = paraphrases.map((example, index) => ({
+    share: [0.4, 0.35, 0.25][index],
+    members: [{ ...messages[index % messages.length], text: example }]
+  }));
+
+  const merged = mergeIntentGroups(clusters, [{
+    clusterIndexes: [0, 1, 2],
+    label: 'Go left',
+    evidence: paraphrases[0],
+    isOpinion: true
+  }]);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].label, 'GO LEFT');
+  assert.equal(merged[0].share, 1);
+  assert.deepEqual(merged[0].examples, paraphrases);
+});
+
 test('intent merging assigns a raw cluster only once and returns at most three groups', () => {
   const evidence = ['Burn first', 'Heal second', 'Dodge third', 'Block fourth'];
   const clusters = [0.4, 0.3, 0.2, 0.1].map((share, index) => ({
