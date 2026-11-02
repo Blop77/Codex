@@ -12,15 +12,16 @@ Build: `npm run video` → `video/out/hivemind-demo.mp4` + `video/out/hivemind-d
 |---|-------|--------|---------------------|
 | 1 | Cold open | Motion: a flooding Twitch chat, then 3 messages highlighted | A boss-fight chat; hundreds of msgs/min; the streamer reads ~3. |
 | 2 | Title | Motion: hundreds of dots converge into the Hivemind orb | "So we built Hivemind. A thousand voices. One mind." |
-| 3 | Live on Twitch | `video/clips/twitch.mp4` (real stream, overlay in OBS), its audio at 30% under the VO | Every `WINDOW_SECONDS` it finds ≤3 top opinions, says them aloud, mood face. |
-| 4 | How it works | Motion, synced line by line: chat → moderation → embeddings → `OPENAI_CHAT_MODEL` merge → TTS | Moderation, meaning clusters, intent merge, voice, one batch per window. |
+| 3 | Live on Twitch | `video/clips/twitch.mp4` (real stream, overlay in OBS), Hivemind heard at full volume, narration pauses for it | Every few seconds it finds ≤3 top opinions, says them aloud, mood face. |
+| 4 | How it works | Motion, synced line by line: chat → moderation → embeddings → GPT merge → TTS | Moderation, meaning clusters, intent merge, voice, one batch per window. |
 | 5 | Try it | Live site: landing → sandbox chat → boss-fight scenario; then the real overlay page full screen | No-login sandbox, scenarios, the meter settling. |
 | 6 | Streamer controls | Live overlay: fake raid/sub/cheer; then the dashboard's "Ask the hive" | Events and asking chat a question. |
 | 7 | Built with Codex | `video/clips/codex.mp4` (if present), then the real commit history from `git log` | Spec + rulebook, one prompt at a time, what Codex built, the merge-step fix, multi-room deploy. |
 | 8 | Outro | Motion: orb, 3 steps, live URL, repo | Log in, paste one link into OBS, try it now. |
 
-The exact narration lives in `scenes` in `video/generate.mjs`. Narration reads `WINDOW_SECONDS` and
-`OPENAI_CHAT_MODEL`, so it always matches the deployed config.
+The exact narration lives in `scenes` in `video/generate.mjs`. It names neither a window length nor a chat
+model: the window is set per room (the clips show 15s and 10s), and the local `.env` can differ from the deployed
+site. `VIDEO_CHAT_MODEL_LABEL` sets the model label in the diagram (default "GPT model").
 
 ## How it is made
 

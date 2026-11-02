@@ -47,8 +47,9 @@ const voiceInstructions = process.env.VIDEO_VOICE_INSTRUCTIONS || 'Upbeat, energ
 const voiceSpeed = Math.min(1.5, Math.max(0.8, Number(process.env.VIDEO_VOICE_SPEED) || 1.08));
 const preset = process.env.VIDEO_PRESET || 'medium';
 // Narration must describe what the deployed site does; these read the same env vars as the server.
-const windowSeconds = Math.max(5, Number(process.env.WINDOW_SECONDS) || 20);
-const chatModelLabel = (process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini').replace(/^gpt/i, 'GPT').replace(/-mini$/i, ' mini');
+// The local .env can differ from the deployed site, and the window is set per room (the clips show 15s and 10s),
+// so the narration names neither a window length nor a model. VIDEO_CHAT_MODEL_LABEL sets the diagram label.
+const chatModelLabel = process.env.VIDEO_CHAT_MODEL_LABEL || 'GPT model';
 const ffmpeg = ffmpegStatic;
 const ffprobe = ffprobeStatic.path;
 const openai = DRY || !process.env.OPENAI_API_KEY ? null : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -65,14 +66,14 @@ const scenes = [
   { id: 'twitch', min: 20, tag: 'LIVE ON TWITCH', hiveAfter: 3, lines: [
     'Here it is, live on a real Twitch stream.',
     'Hivemind listens to every message in chat.',
-    `Every ${windowSeconds} seconds, it finds the top opinions, at most three, and shows them on the meter.`,
+    'Every few seconds, it finds the top opinions, at most three, and shows them on the meter.',
     'Then it says them out loud, as one character, right on stream.',
     'Its face follows the mood of the room. Hyped, salty, confused, or chaotic.'] },
   { id: 'how', lines: [
     'Here\'s how it works.',
     'First, OpenAI moderation checks every message, so trolls can\'t take over the voice.',
     'Next, embeddings group messages by meaning. Go left, take the left door, and left at the statue all count as one opinion.',
-    `Then ${chatModelLabel} merges those groups into the top intents, picks the mood, and writes the line.`,
+    'Then a GPT model merges those groups into the top intents, picks the mood, and writes the line.',
     'Finally, text to speech gives the hive its voice.',
     'It\'s one batch of calls per window, never one per message, so it stays fast and cheap.'] },
   { id: 'try', min: 18, tag: 'TRY IT · NO LOGIN', sub: baseUrl.replace(/^https?:\/\//, ''), lines: [
