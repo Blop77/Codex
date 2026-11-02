@@ -36,7 +36,8 @@ The exact narration lives in `scenes` in `video/generate.mjs`. Narration reads `
 - **Human clips** in `video/clips/`: `twitch.mp4` (**required for submission**; a placeholder card is used until it
   exists) and `codex.mp4` (optional). If `twitch.mp4` has audio, the script finds where Hivemind speaks and starts
   the clip so Hivemind talks right after "Then it says them out loud…". The narrator never talks over Hivemind,
-  and the clip is at full volume while Hivemind speaks. Start offsets: `VIDEO_TWITCH_START` (overrides the
+  and the clip is at full volume while Hivemind speaks. The scene runs until the last Hivemind line in the clip
+  ends, so trim `twitch.mp4` down to the lines you want heard. Start offsets: `VIDEO_TWITCH_START` (overrides the
   automatic start), `VIDEO_CODEX_START` (seconds).
 
 ## Flags

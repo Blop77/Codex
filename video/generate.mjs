@@ -180,8 +180,8 @@ async function prepareNarration() {
       t += line.duration + GAP;
     }
     end = t - GAP + TAIL;
-    // Let any Hivemind line that starts inside the scene finish.
-    for (const [hs, he] of scene.holds) if (hs < end && he + 0.5 > end) end = he + 0.5;
+    // Play every Hivemind line in the clip to the end. Edit the clip down to the lines you want heard.
+    for (const [, he] of scene.holds) end = Math.max(end, he + 0.5);
     scene.duration = Math.max(scene.min || 0, end);
     if (scene.holds.length) console.log(`  ${scene.id}: clip from ${scene.clipStart.toFixed(1)}s, Hivemind speaks at ${scene.holds.filter(([hs]) => hs < scene.duration).map(([hs, he]) => `${hs.toFixed(1)}-${he.toFixed(1)}s`).join(', ') || 'none'}`);
     scene.start = sceneStart;
