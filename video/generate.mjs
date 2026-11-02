@@ -590,7 +590,8 @@ async function buildScene(scene, index) {
 
 async function commitHistory() {
   try {
-    const { stdout } = await run('git', ['log', '--reverse', '--format=%h|%s', 'HEAD']);
+    // Only commits that touch the app or its spec, so video and README work is never shown as Codex's.
+    const { stdout } = await run('git', ['log', '--reverse', '--format=%h|%s', 'HEAD', '--', 'src', 'public', 'sim', 'test', 'SPEC.md', 'AGENTS.md', 'PROMPTS.md']);
     return stdout.trim().split('\n').map((line) => { const [h, ...rest] = line.split('|'); return { hash: h, subject: rest.join('|') }; })
       .filter((c) => !/readme|video|demo|initial commit/i.test(c.subject)).slice(0, 7)
       .map((c) => ({ ...c, hot: /merge/i.test(c.subject) ? 'merge' : /multi-tenant|multi-room|sandbox/i.test(c.subject) ? 'rooms' : '' }));
