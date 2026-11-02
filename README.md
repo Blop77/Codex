@@ -6,6 +6,21 @@
 
 Try Hivemind without installing anything: **[Open the live demo](https://hivemind-qefg.onrender.com)**. The first request may take a little while while Render wakes the free service. Sandbox rooms are private to each browser and expire after 10 minutes without activity.
 
+## How this was built
+
+**OpenAI Codex wrote the application:** everything in `src/`, `public/`, `sim/` and `test/`. Codex commits under the repository owner's git identity, so its work shows up as Ishaan Singh's commits, and Codex never appears as a GitHub contributor. The Codex commits are:
+
+- `c60dd87`: server, Twitch OAuth and EventSub, overlay, dashboard and chat simulator
+- `2cc7143`: intent-merge step, after live tests split one opinion across three meter bars
+- `c40f6fe` and `76a854a`: crowd labels and voice lines grounded in real chat evidence
+- `23ad32e`: multi-room Twitch support and the online no-login sandbox
+- `4183452`: the first narrated demo video pipeline
+- `b2eced6`: a regression test for the intent-merge step
+
+Codex session ID: `01a190c3-5edf-7081-9102-d4f2e1628172`
+
+**Claude**, which is why it is listed as a contributor, helped plan `SPEC.md`, `AGENTS.md` and `PROMPTS.md` (`2973d45`), fixed README links, and built the 4K demo video in `video/`. Claude did not write application code.
+
 ## Deploy on Render Free
 
 1. Create a Twitch application in the [Twitch Developer Console](https://dev.twitch.tv/console/apps), select **Confidential**, and add `https://<your-service>.onrender.com/auth/callback` as its OAuth redirect URL.
