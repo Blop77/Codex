@@ -36,7 +36,7 @@ const srtPath = path.join(outDir, 'hivemind-demo.srt');
 // Output is 4K. Motion graphics are screenshotted at true 4K (1920x1080 CSS at 2x). Live-site footage
 // is recorded at 1080p, because Playwright's recorder pads frames above the viewport size, then upscaled.
 const W = 3840, H = 2160, VW = 1920, VH = 1080, FPS = 30;
-const LEAD = 0.35, GAP = 0.22, TAIL = 0.75, FADE = 0.2, MAX_SECONDS = 178;
+const LEAD = 0.35, GAP = 0.22, TAIL = 0.75, FADE = 0.2, MAX_SECONDS = 178, HIVE_PAD = 0.35;
 // Real footage sits in a rounded "screen" (72% size) so the subtitle band below never covers it.
 const FRAME = { x: 536, y: 200, w: 2768, h: 1556 };
 const baseUrl = (process.env.VIDEO_BASE_URL || 'https://hivemind-qefg.onrender.com').replace(/\/$/, '');
@@ -61,7 +61,8 @@ const scenes = [
   { id: 'title', min: 7, lines: [
     'So we built Hivemind.',
     'A thousand voices. One mind.'] },
-  { id: 'twitch', min: 20, tag: 'LIVE ON TWITCH', lines: [
+  // hiveAfter: the narrator stops after this line and the clip's own Hivemind voice is heard (see planHiveHolds).
+  { id: 'twitch', min: 20, tag: 'LIVE ON TWITCH', hiveAfter: 3, lines: [
     'Here it is, live on a real Twitch stream.',
     'Hivemind listens to every message in chat.',
     `Every ${windowSeconds} seconds, it finds the top opinions, at most three, and shows them on the meter.`,
@@ -132,18 +133,57 @@ async function synthLine(text) {
   }
   return { file, duration: await probe(file) };
 }
+// Stretches where the clip's own audio is speaking (Hivemind's voice), in clip seconds.
+async function detectSpeech(file) {
+  const { stderr } = await execFileAsync(ffmpeg, ['-hide_banner', '-nostats', '-i', file, '-vn', '-af', 'silencedetect=noise=-40dB:d=0.6', '-f', 'null', '-'], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  const length = await probe(file);
+  const speech = []; let from = 0;
+  for (const m of stderr.toString().matchAll(/silence_(start|end): ([\d.]+)/g)) {
+    const t = Number(m[2]);
+    if (m[1] === 'start') { if (from !== null && t - from > 0.5) speech.push([from, t]); from = null; } else from = t;
+  }
+  if (from !== null && length - from > 0.5) speech.push([from, length]);
+  return speech;
+}
+
+// For a scene with hiveAfter and detected clip speech, start the clip so Hivemind begins talking right
+// after that line, and never let narration overlap any Hivemind speech inside the scene.
+async function planHiveHolds(scene, lines) {
+  scene.holds = [];
+  if (scene.hiveAfter == null || !scene.speech?.length) return;
+  const lead = LEAD + lines.slice(0, scene.hiveAfter + 1).reduce((sum, l) => sum + l.duration + GAP, 0) - GAP + HIVE_PAD;
+  const manual = process.env.VIDEO_TWITCH_START;
+  if (manual !== undefined && manual !== '') scene.clipStart = Number(manual);
+  else {
+    const hive = scene.speech.find(([s]) => s - lead >= 0);
+    scene.clipStart = hive ? hive[0] - lead : 0;
+  }
+  scene.holds = scene.speech.map(([s, e]) => [s - scene.clipStart, e - scene.clipStart]).filter(([, e]) => e > 0);
+}
+
 async function prepareNarration() {
   console.log(DRY ? '  dry run: estimating narration timing (no OpenAI calls)' : `  ${ttsModel}, voice "${voice}", speed x${voiceSpeed}`);
   let sceneStart = 0;
   for (const scene of scenes) {
-    let t = LEAD;
+    const lines = [];
+    for (const text of scene.lines) lines.push({ text, ...await synthLine(text) });
+    await planHiveHolds(scene, lines);
+    let t = LEAD; let end = 0;
     scene.cues = [];
-    for (const text of scene.lines) {
-      const line = await synthLine(text);
-      scene.cues.push({ text, start: t, duration: line.duration, file: line.file });
+    for (const line of lines) {
+      // Push the line past any Hivemind speech it would talk over.
+      for (let moved = true; moved;) {
+        moved = false;
+        for (const [hs, he] of scene.holds) if (t < he + HIVE_PAD - 0.01 && t + line.duration > hs - HIVE_PAD + 0.01) { t = he + HIVE_PAD; moved = true; }
+      }
+      scene.cues.push({ text: line.text, start: t, duration: line.duration, file: line.file });
       t += line.duration + GAP;
     }
-    scene.duration = Math.max(scene.min || 0, t - GAP + TAIL);
+    end = t - GAP + TAIL;
+    // Let any Hivemind line that starts inside the scene finish.
+    for (const [hs, he] of scene.holds) if (hs < end && he + 0.5 > end) end = he + 0.5;
+    scene.duration = Math.max(scene.min || 0, end);
+    if (scene.holds.length) console.log(`  ${scene.id}: clip from ${scene.clipStart.toFixed(1)}s, Hivemind speaks at ${scene.holds.filter(([hs]) => hs < scene.duration).map(([hs, he]) => `${hs.toFixed(1)}-${he.toFixed(1)}s`).join(', ') || 'none'}`);
     scene.start = sceneStart;
     sceneStart += scene.duration;
   }
@@ -538,7 +578,10 @@ async function buildScene(scene, index) {
   if (native) {
     const offset = scene.parts.slice(0, scene.parts.indexOf(native)).reduce((sum, p) => sum + p.duration, 0);
     args.push('-ss', native.start.toFixed(3), '-i', native.file);
-    audio = `[2:a]atrim=duration=${native.duration.toFixed(3)},asetpts=PTS-STARTPTS,volume=0.3,aresample=48000,adelay=${Math.round(offset * 1000)}:all=1[amb];[1:a][amb]amix=inputs=2:normalize=0:duration=first[aout]`;
+    // Full volume while Hivemind speaks (the narration pauses there), quiet under the narration otherwise.
+    const holds = (native.holds || []).map(([a, b]) => `between(t,${(a - offset - 0.2).toFixed(2)},${(b - offset + 0.2).toFixed(2)})`);
+    const level = holds.length ? `volume='if(${holds.join('+')},1,0.3)':eval=frame` : 'volume=0.3';
+    audio = `[2:a]atrim=duration=${native.duration.toFixed(3)},asetpts=PTS-STARTPTS,${level},aresample=48000,adelay=${Math.round(offset * 1000)}:all=1[amb];[1:a][amb]amix=inputs=2:normalize=0:duration=first[aout]`;
   }
   await run(ffmpeg, [...args, '-filter_complex', audio, '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-t', scene.duration.toFixed(3), out]);
   return out;
@@ -559,6 +602,9 @@ async function main() {
   await Promise.all([voDir, recDir, motionDir, sceneDir, outDir, clipsDir].map((dir) => mkdir(dir, { recursive: true })));
   const started = Date.now();
   console.log('1/5 Narration');
+  const twitch = path.join(clipsDir, 'twitch.mp4');
+  const twitchScene = scenes.find((s) => s.id === 'twitch');
+  if (await exists(twitch) && await hasAudio(twitch)) twitchScene.speech = await detectSpeech(twitch);
   await prepareNarration();
   await writeSubtitles();
   const browser = await chromium.launch({ headless: HEADLESS });
@@ -580,8 +626,7 @@ async function main() {
     S.how.parts = [await motionPart(S.how, 'how')];
     S.outro.parts = [await motionPart(S.outro, 'outro')];
 
-    const twitch = path.join(clipsDir, 'twitch.mp4');
-    if (await exists(twitch)) S.twitch.parts = [clipPart(twitch, Number(process.env.VIDEO_TWITCH_START) || 0, S.twitch.duration, { nativeAudio: await hasAudio(twitch), framed: true })];
+    if (await exists(twitch)) S.twitch.parts = [clipPart(twitch, S.twitch.clipStart ?? (Number(process.env.VIDEO_TWITCH_START) || 0), S.twitch.duration, { nativeAudio: await hasAudio(twitch), holds: S.twitch.holds, framed: true })];
     else { console.warn('  video/clips/twitch.mp4 missing: placeholder card used (the real clip is required for submission)'); S.twitch.parts = [imagePart(await card('twitch', 'Add video/clips/twitch.mp4', 'A real stream with the Hivemind overlay in OBS and people chatting'), S.twitch.duration)]; }
 
     const codexClip = path.join(clipsDir, 'codex.mp4');
